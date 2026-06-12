@@ -1,74 +1,99 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+import requests
+import json
+import time
 
 TOKEN = "8520274534:AAG0bctoo3jUYw2mJjYE3Intu8M36KtTVKU"
-CHANNEL_ID = -1003340688495
+CHANNEL_ID = "-1003340688495"
 
-user_states = {}
+last_update_id = 0
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("🟢 BUY", callback_data="buy")],
-        [InlineKeyboardButton("🔴 SELL", callback_data="sell")],
-        [InlineKeyboardButton("❌ CANCEL", callback_data="cancel")]
-    ]
-    await update.message.reply_text("🤖 Bot de trading XAUUSD\nChoisissez :", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    
-    if query.data == "buy":
-        user_states[user_id] = {"action": "buy"}
-        await query.edit_message_text("💰 Entrez le prix (ex: 4206.56) :")
-    elif query.data == "sell":
-        user_states[user_id] = {"action": "sell"}
-        await query.edit_message_text("💰 Entrez le prix (ex: 4206.56) :")
-    elif query.data == "cancel":
-        user_states.pop(user_id, None)
-        await query.edit_message_text("❌ Annulé. Tapez /start")
-
-async def handle_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id not in user_states:
-        await update.message.reply_text("❌ Tapez /start d'abord")
-        return
-    
+def send_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    data = {"chat_id": chat_id, "text": text}
     try:
-        prix = float(update.message.text.replace(",", "."))
-    except ValueError:
-        await update.message.reply_text("❌ Prix invalide")
+        requests.post(url, data=data)
+    except:
+        pass
+
+def get_updates():
+    global last_update_id
+    url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+    params = {"offset": last_update_id + 1, "timeout": 30}
+    try:
+        response = requests.get(url, params=params)
+        updates = response.json()
+        if updates.get("ok") and updates.get("result"):
+            for update in updates["result"]:
+                last_update_id = update["update_id"]
+                process_update(update)
+    except:
+        pass
+
+def process_update(update):
+    if "message" not in update:
         return
     
-    action = user_states[user_id]["action"]
+    message = update["message"]
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "")
     
-    if action == "buy":
-        tp1, tp2, tp3 = prix + 6, prix + 10, prix + 18
-        sl = prix - 10
-        emoji, texte = "🟢", "BUY"
+    if text == "/start":
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "🟢 BUY", "callback_data": "buy"}],
+                [{"text": "🔴 SELL", "callback_data": "sell"}]
+            ]
+        }
+        reply_markup = json.dumps(keyboard)
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        data = {"chat_id": chat_id, "text": "🤖 Bot Trading XAUUSD\nChoisissez BUY ou SELL :", "reply_markup": reply_markup}
+        requests.post(url, data=data)
+    
+    elif text.startswith("/"):
+        pass
+    
     else:
-        tp1, tp2, tp3 = prix - 6, prix - 10, prix - 18
-        sl = prix + 10
-        emoji, texte = "🔴", "SELL"
-    
-    message = f"{emoji} SIGNAL {texte} - XAUUSD\n\n💰 Prix : {prix:.2f}\n\n🎯 TP1 : {tp1:.2f}\n🎯 TP2 : {tp2:.2f}\n🎯 TP3 : {tp3:.2f}\n\n🛑 SL : {sl:.2f}\n\n#XAUUSD"
-    
+        try:
+            prix = float(text.replace(",", "."))
+            message_signal = f"🟢 SIGNAL BUY - XAUUSD\n\n💰 Prix: {prix:.2f}\n🎯 TP1: {prix+6:.2f}\n🎯 TP2: {prix+10:.2f}\n🎯 TP3: {prix+18:.2f}\n🛑 SL: {prix-10:.2f}\n\n#XAUUSD"
+            send_message(CHANNEL_ID, message_signal)
+            send_message(chat_id, "✅ Signal BUY envoyé!")
+        except:
+            send_message(chat_id, "❌ Prix invalide")
+
+def handle_callback():
+    url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
     try:
-        await context.bot.send_message(chat_id=CHANNEL_ID, text=message)
-        await update.message.reply_text("✅ Signal envoyé !")
+        response = requests.get(url)
+        updates = response.json()
+        if updates.get("ok") and updates.get("result"):
+            for update in updates["result"]:
+                if "callback_query" in update:
+                    callback = update["callback_query"]
+                    action = callback["data"]
+                    chat_id = callback["message"]["chat"]["id"]
+                    
+                    if action == "buy":
+                        send_message(chat_id, "💰 Entrez le prix pour BUY (ex: 4200):")
+                    elif action == "sell":
+                        send_message(chat_id, "💰 Entrez le prix pour SELL (ex: 4200):")
+                    
+                    answer_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
+                    requests.post(answer_url, data={"callback_query_id": callback["id"]})
+                    
+                    # Supprimer le callback pour ne pas le traiter plusieurs fois
+                    delete_url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+                    requests.get(delete_url, params={"offset": callback["update_id"] + 1})
+    except:
+        pass
+
+print("🤖 Bot Trading démarré! Va sur @ORYECHNIK_bot et tape /start")
+
+while True:
+    try:
+        get_updates()
+        handle_callback()
+        time.sleep(1)
     except Exception as e:
-        await update.message.reply_text(f"❌ Erreur : {e}")
-    
-    user_states.pop(user_id, None)
-
-def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_price))
-    print("✅ Bot démarré !")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+        print(f"Erreur: {e}")
+        time.sleep(5)
