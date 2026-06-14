@@ -6,10 +6,13 @@ TOKEN = "8520274534:AAG0bctoo3jUYw2mJjYE3Intu8M36KtTVKU"
 CHANNEL_ID = "-1003340688495"
 
 last_update_id = 0
+trade_counter = 0
 
-def send_message(chat_id, text):
+def send_message(chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    data = {"chat_id": chat_id, "text": text}
+    data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
     try:
         requests.post(url, data=data)
     except:
@@ -30,6 +33,7 @@ def get_updates():
         pass
 
 def process_update(update):
+    global trade_counter
     if "message" not in update:
         return
     
@@ -41,13 +45,12 @@ def process_update(update):
         keyboard = {
             "inline_keyboard": [
                 [{"text": "🟢 BUY", "callback_data": "buy"}],
-                [{"text": "🔴 SELL", "callback_data": "sell"}]
+                [{"text": "🔴 SELL", "callback_data": "sell"}],
+                [{"text": "❌ CANCEL", "callback_data": "cancel"}],
+                [{"text": "🆘 SUPPORT", "callback_data": "support"}]
             ]
         }
-        reply_markup = json.dumps(keyboard)
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        data = {"chat_id": chat_id, "text": "🤖 Bot Trading XAUUSD\nChoisissez BUY ou SELL :", "reply_markup": reply_markup}
-        requests.post(url, data=data)
+        send_message(chat_id, "🤖 *XAUUSD Trading Bot*\nWelcome! Choose an action below:", keyboard)
     
     elif text.startswith("/"):
         pass
@@ -55,11 +58,15 @@ def process_update(update):
     else:
         try:
             prix = float(text.replace(",", "."))
-            message_signal = f"🟢 SIGNAL BUY - XAUUSD\n\n💰 Prix: {prix:.2f}\n🎯 TP1: {prix+6:.2f}\n🎯 TP2: {prix+10:.2f}\n🎯 TP3: {prix+18:.2f}\n🛑 SL: {prix-10:.2f}\n\n#XAUUSD"
+            trade_counter += 1
+            ref = f"XAU-{trade_counter:03d}"
+            
+            message_signal = f"🟢 *BUY SIGNAL* - XAUUSD\n\n📊 *Ref:* {ref}\n💰 *Entry:* {prix:.2f}\n🎯 *TP1:* {prix+6:.2f}\n🎯 *TP2:* {prix+10:.2f}\n🎯 *TP3:* {prix+18:.2f}\n🛑 *SL:* {prix-10:.2f}\n\n#XAUUSD #Trading"
+            
             send_message(CHANNEL_ID, message_signal)
-            send_message(chat_id, "✅ Signal BUY envoyé!")
+            send_message(chat_id, f"✅ *Signal {ref}* sent to channel!")
         except:
-            send_message(chat_id, "❌ Prix invalide")
+            send_message(chat_id, "❌ *Invalid price.*\nPlease enter a number (ex: 4200.00)")
 
 def handle_callback():
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
@@ -74,20 +81,31 @@ def handle_callback():
                     chat_id = callback["message"]["chat"]["id"]
                     
                     if action == "buy":
-                        send_message(chat_id, "💰 Entrez le prix pour BUY (ex: 4200):")
+                        send_message(chat_id, "💰 *Enter BUY price* (ex: 4200.00):")
                     elif action == "sell":
-                        send_message(chat_id, "💰 Entrez le prix pour SELL (ex: 4200):")
+                        send_message(chat_id, "💰 *Enter SELL price* (ex: 4200.00):")
+                    elif action == "cancel":
+                        send_message(chat_id, "❌ *Action cancelled.* Type /start to restart.")
+                    elif action == "support":
+                        support_message = (
+                            "📩 *SUPPORT REQUEST*\n\n"
+                            "For any specific question, partnership, or assistance regarding signals:\n\n"
+                            "👉 *Contact:* @Raymond151033\n\n"
+                            "📌 *Please include:*\n"
+                            "• Trade reference (if applicable)\n"
+                            "• Date and time\n"
+                            "• Clear description of your request\n\n"
+                            "Thank you for using *TRaymonding Trading Bot*.\n"
+                            "We will respond as soon as possible."
+                        )
+                        send_message(chat_id, support_message)
                     
                     answer_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
                     requests.post(answer_url, data={"callback_query_id": callback["id"]})
-                    
-                    # Supprimer le callback pour ne pas le traiter plusieurs fois
-                    delete_url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-                    requests.get(delete_url, params={"offset": callback["update_id"] + 1})
     except:
         pass
 
-print("🤖 Bot Trading démarré! Va sur @ORYECHNIK_bot et tape /start")
+print("🤖 XAUUSD Trading Bot started! Go to @ORYECHNIK_bot and type /start")
 
 while True:
     try:
@@ -95,5 +113,5 @@ while True:
         handle_callback()
         time.sleep(1)
     except Exception as e:
-        print(f"Erreur: {e}")
+        print(f"Error: {e}")
         time.sleep(5)
