@@ -7,7 +7,7 @@ CHANNEL_ID = "-1003340688495"
 
 last_update_id = 0
 trade_counter = 0
-user_mode = {}  # stocke "buy" ou "sell" par utilisateur
+user_mode = {}
 
 def send_message(chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -16,21 +16,6 @@ def send_message(chat_id, text, reply_markup=None):
         data["reply_markup"] = json.dumps(reply_markup)
     try:
         requests.post(url, data=data)
-    except:
-        pass
-
-def set_persistent_menu():
-    url = f"https://api.telegram.org/bot{TOKEN}/setMyCommands"
-    commands = {
-        "commands": [
-            {"command": "start", "description": "Restart bot"},
-            {"command": "buy", "description": "Send BUY signal"},
-            {"command": "sell", "description": "Send SELL signal"},
-            {"command": "support", "description": "Contact support"}
-        ]
-    }
-    try:
-        requests.post(url, json=commands)
     except:
         pass
 
@@ -66,61 +51,57 @@ def process_message(message):
         }
         send_message(chat_id, "🤖 *XAUUSD Trading Bot*\nChoose an action:", keyboard)
         user_mode.pop(chat_id, None)
+        return
 
-    elif text == "/buy":
-        user_mode[chat_id] = "buy"
-        send_message(chat_id, "💰 *Enter BUY price* (ex: 4200.00):")
-    elif text == "/sell":
-        user_mode[chat_id] = "sell"
-        send_message(chat_id, "💰 *Enter SELL price* (ex: 4200.00):")
-    elif text == "/support":
-        msg = (
-            "📩 *SUPPORT REQUEST*\n\n"
-            "Contact: @Raymond151033\n\n"
-            "Please include trade reference, date, and details."
-        )
-        send_message(chat_id, msg)
-    else:
-        # L'utilisateur envoie un prix
-        if chat_id not in user_mode:
-            send_message(chat_id, "❌ Use /buy or /sell first.")
-            return
+    if text in ["/buy", "/sell"]:
+        mode = "buy" if text == "/buy" else "sell"
+        user_mode[chat_id] = mode
+        send_message(chat_id, f"💰 *Enter {mode.upper()} price* (ex: 4200.00):")
+        return
 
-        try:
-            prix = float(text.replace(",", "."))
-            trade_counter += 1
-            ref = f"XAU-{trade_counter:03d}"
-            mode = user_mode[chat_id]
+    if text == "/support":
+        send_message(chat_id, "📩 Contact support: @Raymond151033")
+        return
 
-            if mode == "buy":
-                message_signal = (
-                    f"🟢 *BUY SIGNAL* - XAUUSD\n\n"
-                    f"📊 *Ref:* {ref}\n"
-                    f"💰 *Entry:* {prix:.2f}\n"
-                    f"🎯 *TP1:* {prix+6:.2f}\n"
-                    f"🎯 *TP2:* {prix+10:.2f}\n"
-                    f"🎯 *TP3:* {prix+18:.2f}\n"
-                    f"🛑 *SL:* {prix-10:.2f}\n\n"
-                    f"#XAUUSD #Trading"
-                )
-            else:  # sell
-                message_signal = (
-                    f"🔴 *SELL SIGNAL* - XAUUSD\n\n"
-                    f"📊 *Ref:* {ref}\n"
-                    f"💰 *Entry:* {prix:.2f}\n"
-                    f"🎯 *TP1:* {prix-6:.2f}\n"
-                    f"🎯 *TP2:* {prix-10:.2f}\n"
-                    f"🎯 *TP3:* {prix-18:.2f}\n"
-                    f"🛑 *SL:* {prix+10:.2f}\n\n"
-                    f"#XAUUSD #Trading"
-                )
+    # Traitement du prix
+    if chat_id not in user_mode:
+        send_message(chat_id, "❌ Use /buy or /sell first.")
+        return
 
-            send_message(CHANNEL_ID, message_signal)
-            send_message(chat_id, f"✅ *Signal {ref} ({mode.upper()})* sent to channel!")
-            user_mode.pop(chat_id, None)
+    try:
+        prix = float(text.replace(",", "."))
+        mode = user_mode.pop(chat_id)  # 🔁 récupère ET efface immédiatement
+        trade_counter += 1
+        ref = f"XAU-{trade_counter:03d}"
 
-        except:
-            send_message(chat_id, "❌ *Invalid price.* Use /buy or /sell.")
+        if mode == "buy":
+            message_signal = (
+                f"🟢 *BUY SIGNAL* - XAUUSD\n\n"
+                f"📊 *Ref:* {ref}\n"
+                f"💰 *Entry:* {prix:.2f}\n"
+                f"🎯 *TP1:* {prix+6:.2f}\n"
+                f"🎯 *TP2:* {prix+10:.2f}\n"
+                f"🎯 *TP3:* {prix+18:.2f}\n"
+                f"🛑 *SL:* {prix-10:.2f}\n\n"
+                f"#XAUUSD #Trading"
+            )
+        else:
+            message_signal = (
+                f"🔴 *SELL SIGNAL* - XAUUSD\n\n"
+                f"📊 *Ref:* {ref}\n"
+                f"💰 *Entry:* {prix:.2f}\n"
+                f"🎯 *TP1:* {prix-6:.2f}\n"
+                f"🎯 *TP2:* {prix-10:.2f}\n"
+                f"🎯 *TP3:* {prix-18:.2f}\n"
+                f"🛑 *SL:* {prix+10:.2f}\n\n"
+                f"#XAUUSD #Trading"
+            )
+
+        send_message(CHANNEL_ID, message_signal)
+        send_message(chat_id, f"✅ *Signal {ref} ({mode.upper()})* sent to channel.")
+
+    except:
+        send_message(chat_id, "❌ *Invalid price.*")
 
 def process_callback(callback):
     chat_id = callback["message"]["chat"]["id"]
@@ -138,9 +119,7 @@ def process_callback(callback):
     answer_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
     requests.post(answer_url, data={"callback_query_id": callback["id"]})
 
-# Initialisation
-set_persistent_menu()
-print("🤖 XAUUSD Bot OK (BUY / SELL fixed)")
+print("🤖 XAUUSD Bot - Double send FIXED")
 
 while True:
     try:
