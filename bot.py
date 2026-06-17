@@ -1,6 +1,8 @@
 import requests
 import json
 import time
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 TOKEN = "8520274534:AAG0bctoo3jUYw2mJjYE3Intu8M36KtTVKU"
 CHANNEL_ID = "-1003340688495"
@@ -63,14 +65,13 @@ def process_message(message):
         send_message(chat_id, "📩 Contact support: @Raymond151033")
         return
 
-    # Traitement du prix
     if chat_id not in user_mode:
         send_message(chat_id, "❌ Use /buy or /sell first.")
         return
 
     try:
         prix = float(text.replace(",", "."))
-        mode = user_mode.pop(chat_id)  # 🔁 récupère ET efface immédiatement
+        mode = user_mode.pop(chat_id)
         trade_counter += 1
         ref = f"XAU-{trade_counter:03d}"
 
@@ -119,7 +120,20 @@ def process_callback(callback):
     answer_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
     requests.post(answer_url, data={"callback_query_id": callback["id"]})
 
-print("🤖 XAUUSD Bot - Double send FIXED")
+# === FAUX SERVEUR HTTP POUR RENDER ===
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+def run_http():
+    HTTPServer(("0.0.0.0", 10000), Handler).serve_forever()
+
+Thread(target=run_http, daemon=True).start()
+# ====================================
+
+print("🤖 XAUUSD Bot - Double send FIXED + HTTP keep-alive")
 
 while True:
     try:
