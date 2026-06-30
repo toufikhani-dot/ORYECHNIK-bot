@@ -1,10 +1,11 @@
 import requests
 import json
 import time
+import datetime
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-TOKEN = "8520274534:AAG0bctoo3jUYw2mJjYE3Intu8M36KtTVKU"
+TOKEN = "8520274534:AAEQlC31qLlWKubwbleMCCV_x8Va2OmdeRM"
 CHANNEL_ID = "-1003340688495"
 
 last_update_id = 0
@@ -73,33 +74,38 @@ def process_message(message):
         prix = float(text.replace(",", "."))
         mode = user_mode.pop(chat_id)
         trade_counter += 1
-        ref = f"XAU-{trade_counter:03d}"
+
+        now = datetime.datetime.now()
+        date_str = now.strftime("%d/%m/%Y")
+        time_str = now.strftime("%H:%M")
 
         if mode == "buy":
             message_signal = (
                 f"🟢 *BUY SIGNAL* - XAUUSD\n\n"
-                f"📊 *Ref:* {ref}\n"
-                f"💰 *Entry:* {prix:.2f}\n"
+                f"📅 *Date:* {date_str}\n"
+                f"⏰ *Time:* {time_str}\n\n"
+                f"💰 *Entry:* {prix:.2f}\n\n"
                 f"🎯 *TP1:* {prix+6:.2f}\n"
                 f"🎯 *TP2:* {prix+10:.2f}\n"
-                f"🎯 *TP3:* {prix+18:.2f}\n"
+                f"🎯 *TP3:* {prix+18:.2f}\n\n"
                 f"🛑 *SL:* {prix-10:.2f}\n\n"
                 f"#XAUUSD #Trading"
             )
         else:
             message_signal = (
                 f"🔴 *SELL SIGNAL* - XAUUSD\n\n"
-                f"📊 *Ref:* {ref}\n"
-                f"💰 *Entry:* {prix:.2f}\n"
+                f"📅 *Date:* {date_str}\n"
+                f"⏰ *Time:* {time_str}\n\n"
+                f"💰 *Entry:* {prix:.2f}\n\n"
                 f"🎯 *TP1:* {prix-6:.2f}\n"
                 f"🎯 *TP2:* {prix-10:.2f}\n"
-                f"🎯 *TP3:* {prix-18:.2f}\n"
+                f"🎯 *TP3:* {prix-18:.2f}\n\n"
                 f"🛑 *SL:* {prix+10:.2f}\n\n"
                 f"#XAUUSD #Trading"
             )
 
         send_message(CHANNEL_ID, message_signal)
-        send_message(chat_id, f"✅ *Signal {ref} ({mode.upper()})* sent to channel.")
+        send_message(chat_id, f"✅ *Signal {mode.upper()}* sent to channel!")
 
     except:
         send_message(chat_id, "❌ *Invalid price.*")
@@ -133,7 +139,7 @@ def run_http():
 Thread(target=run_http, daemon=True).start()
 # ====================================
 
-print("🤖 XAUUSD Bot - Double send FIXED + HTTP keep-alive")
+print("🤖 XAUUSD Bot - Date/Time added, Ref removed")
 
 while True:
     try:
