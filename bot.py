@@ -5,7 +5,7 @@ import datetime
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-TOKEN = "8520274534:AAE0LC31qLLWkubwbLeMCCV_x8Va20mdeRM"
+TOKEN = "8520274534:AAFRoKXGKtsM9BXk4sHPjdkDRGJ8nW60LX4"
 CHANNEL_ID = "-1003340688495"
 
 last_update_id = 0
