@@ -124,20 +124,24 @@ def process_callback(callback):
     answer_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
     requests.post(answer_url, data={"callback_query_id": callback["id"]})
 
-# === FAUX SERVEUR HTTP POUR RENDER ===
+# === FAUX SERVEUR HTTP POUR RENDER (avec HEAD supporté) ===
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
 
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+# ==========================================================
+
 def run_http():
     HTTPServer(("0.0.0.0", 10000), Handler).serve_forever()
 
 Thread(target=run_http, daemon=True).start()
-# ====================================
 
-print("🤖 XAUUSD Bot - TP/SL 20/20/30/40 + Swing + Entry Zone + 10min")
+print("🤖 XAUUSD Bot - TP/SL 20/20/30/40 + Swing + Entry Zone + 10min + HEAD support")
 
 while True:
     try:
