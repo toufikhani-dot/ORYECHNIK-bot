@@ -5,11 +5,10 @@ import datetime
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-TOKEN = "8520274534:AAEQlC31qLlWKubwbleMCCV_x8Va2OmdeRM"
+TOKEN = "8520274534:AAGgZvFwpvKcGHBUidCl7WZdMx_-c_oCwfQ"
 CHANNEL_ID = "-1003340688495"
 
 last_update_id = 0
-trade_counter = 0
 user_mode = {}
 
 def send_message(chat_id, text, reply_markup=None):
@@ -40,7 +39,7 @@ def get_updates():
         pass
 
 def process_message(message):
-    global trade_counter, user_mode
+    global user_mode
     chat_id = message["chat"]["id"]
     text = message.get("text", "")
 
@@ -48,8 +47,7 @@ def process_message(message):
         keyboard = {
             "inline_keyboard": [
                 [{"text": "🟢 BUY", "callback_data": "buy"}],
-                [{"text": "🔴 SELL", "callback_data": "sell"}],
-                [{"text": "🆘 SUPPORT", "callback_data": "support"}]
+                [{"text": "🔴 SELL", "callback_data": "sell"}]
             ]
         }
         send_message(chat_id, "🤖 *XAUUSD Trading Bot*\nChoose an action:", keyboard)
@@ -62,10 +60,6 @@ def process_message(message):
         send_message(chat_id, f"💰 *Enter {mode.upper()} price* (ex: 4200.00):")
         return
 
-    if text == "/support":
-        send_message(chat_id, "📩 Contact support: @Raymond151033")
-        return
-
     if chat_id not in user_mode:
         send_message(chat_id, "❌ Use /buy or /sell first.")
         return
@@ -73,22 +67,26 @@ def process_message(message):
     try:
         prix = float(text.replace(",", "."))
         mode = user_mode.pop(chat_id)
-        trade_counter += 1
 
         now = datetime.datetime.now()
         date_str = now.strftime("%d/%m/%Y")
         time_str = now.strftime("%H:%M")
+
+        entry_low = prix - 2
+        entry_high = prix + 3
 
         if mode == "buy":
             message_signal = (
                 f"🟢 *BUY SIGNAL* - XAUUSD\n\n"
                 f"📅 *Date:* {date_str}\n"
                 f"⏰ *Time:* {time_str}\n\n"
-                f"💰 *Entry:* {prix:.2f}\n\n"
-                f"🎯 *TP1:* {prix+6:.2f}\n"
-                f"🎯 *TP2:* {prix+10:.2f}\n"
-                f"🎯 *TP3:* {prix+18:.2f}\n\n"
-                f"🛑 *SL:* {prix-10:.2f}\n\n"
+                f"📊 *Entry Zone:* {entry_low:.2f} - {entry_high:.2f}\n"
+                f"📈 *Time Frame:* 10min\n\n"
+                f"🎯 *TP1:* {prix+20:.2f}\n"
+                f"🎯 *TP2:* {prix+30:.2f}\n"
+                f"🎯 *TP3:* {prix+40:.2f}\n"
+                f"🔄 *Swing:* Small lot after TP3\n\n"
+                f"🛑 *SL:* {prix-20:.2f}\n\n"
                 f"#XAUUSD #Trading"
             )
         else:
@@ -96,11 +94,13 @@ def process_message(message):
                 f"🔴 *SELL SIGNAL* - XAUUSD\n\n"
                 f"📅 *Date:* {date_str}\n"
                 f"⏰ *Time:* {time_str}\n\n"
-                f"💰 *Entry:* {prix:.2f}\n\n"
-                f"🎯 *TP1:* {prix-6:.2f}\n"
-                f"🎯 *TP2:* {prix-10:.2f}\n"
-                f"🎯 *TP3:* {prix-18:.2f}\n\n"
-                f"🛑 *SL:* {prix+10:.2f}\n\n"
+                f"📊 *Entry Zone:* {entry_low:.2f} - {entry_high:.2f}\n"
+                f"📈 *Time Frame:* 10min\n\n"
+                f"🎯 *TP1:* {prix-20:.2f}\n"
+                f"🎯 *TP2:* {prix-30:.2f}\n"
+                f"🎯 *TP3:* {prix-40:.2f}\n"
+                f"🔄 *Swing:* Small lot after TP3\n\n"
+                f"🛑 *SL:* {prix+20:.2f}\n\n"
                 f"#XAUUSD #Trading"
             )
 
@@ -120,8 +120,6 @@ def process_callback(callback):
     elif data == "sell":
         user_mode[chat_id] = "sell"
         send_message(chat_id, "💰 Enter SELL price:")
-    elif data == "support":
-        send_message(chat_id, "📩 Contact support: @Raymond151033")
 
     answer_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
     requests.post(answer_url, data={"callback_query_id": callback["id"]})
@@ -139,7 +137,7 @@ def run_http():
 Thread(target=run_http, daemon=True).start()
 # ====================================
 
-print("🤖 XAUUSD Bot - Date/Time added, Ref removed")
+print("🤖 XAUUSD Bot - TP/SL 20/20/30/40 + Swing + Entry Zone + 10min")
 
 while True:
     try:
