@@ -17,17 +17,24 @@ def send_message(chat_id, text, reply_markup=None):
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
     try:
-        requests.post(url, data=data)
-    except:
-        pass
+        response = requests.post(url, data=data)
+        print(f"📤 Envoi message à {chat_id}: {response.status_code}")
+    except Exception as e:
+        print(f"❌ Erreur envoi: {e}")
 
 def get_updates():
     global last_update_id
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
     params = {"offset": last_update_id + 1, "timeout": 30}
     try:
+        print("📥 Checking updates...")
         response = requests.get(url, params=params)
+        print(f"📥 Réponse API: {response.status_code}")
         updates = response.json()
+        
+        # Affiche les 500 premiers caractères pour debug
+        print(f"📥 Données reçues: {str(updates)[:500]}")
+        
         if updates.get("ok") and updates.get("result"):
             for update in updates["result"]:
                 last_update_id = update["update_id"]
@@ -35,13 +42,19 @@ def get_updates():
                     process_message(update["message"])
                 elif "callback_query" in update:
                     process_callback(update["callback_query"])
-    except:
-        pass
+    except Exception as e:
+        print(f"❌ Erreur get_updates: {e}")
 
 def process_message(message):
     global user_mode
     chat_id = message["chat"]["id"]
     text = message.get("text", "")
+    
+    print(f"📩 Message reçu de {chat_id}: '{text}'")
+    
+    # Test simple : répondre à tout message pour vérifier que le bot fonctionne
+    # send_message(chat_id, f"✅ Message reçu: {text}")
+    # return
 
     if text == "/start":
         keyboard = {
@@ -107,12 +120,15 @@ def process_message(message):
         send_message(CHANNEL_ID, message_signal)
         send_message(chat_id, f"✅ *Signal {mode.upper()}* sent to channel!")
 
-    except:
+    except Exception as e:
+        print(f"❌ Erreur traitement prix: {e}")
         send_message(chat_id, "❌ *Invalid price.*")
 
 def process_callback(callback):
     chat_id = callback["message"]["chat"]["id"]
     data = callback["data"]
+    
+    print(f"📩 Callback reçu de {chat_id}: {data}")
 
     if data == "buy":
         user_mode[chat_id] = "buy"
@@ -122,7 +138,10 @@ def process_callback(callback):
         send_message(chat_id, "💰 Enter SELL price:")
 
     answer_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
-    requests.post(answer_url, data={"callback_query_id": callback["id"]})
+    try:
+        requests.post(answer_url, data={"callback_query_id": callback["id"]})
+    except Exception as e:
+        print(f"❌ Erreur callback: {e}")
 
 # === FAUX SERVEUR HTTP POUR RENDER (avec HEAD supporté) ===
 class Handler(BaseHTTPRequestHandler):
@@ -142,11 +161,12 @@ def run_http():
 Thread(target=run_http, daemon=True).start()
 
 print("🤖 XAUUSD Bot - TP/SL 20/20/30/40 + Swing + Entry Zone + 10min + HEAD support")
+print("✅ Bot démarré. En attente des messages...")
 
 while True:
     try:
         get_updates()
         time.sleep(1)
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ Erreur boucle principale: {e}")
         time.sleep(5)
