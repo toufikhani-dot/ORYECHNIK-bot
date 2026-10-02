@@ -54,7 +54,12 @@ def get_updates():
             print(f"Reponse non-JSON de Telegram: {response.text[:300]}")
             return
 
-        if updates.get("ok") and updates.get("result"):
+                if not updates.get("ok"):
+            print(f"Telegram a refuse la requete: {updates}")
+            return
+
+        if updates.get("result"):
+
             for update in updates["result"]:
                 last_update_id = update["update_id"]
                 if "message" in update:
