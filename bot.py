@@ -1,3 +1,4 @@
+import sys
 import requests
 import json
 import time
@@ -7,16 +8,25 @@ from zoneinfo import ZoneInfo
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "-1003340688495")
 
 if not TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN manquant dans les variables d'environnement.")
 
-PARIS_TZ = ZoneInfo("Europe/Paris")
+try:
+    PARIS_TZ = ZoneInfo("Europe/Paris")
+except Exception as e:
+    print(f"ERREUR ZoneInfo: {e}")
+    PARIS_TZ = datetime.timezone(datetime.timedelta(hours=2))
 
 last_update_id = 0
-
 user_state = {}
 
 
@@ -27,9 +37,9 @@ def send_message(chat_id, text, reply_markup=None):
         data["reply_markup"] = json.dumps(reply_markup)
     try:
         response = requests.post(url, data=data, timeout=10)
-        print(f"📤 Envoi message à {chat_id}: {response.status_code}")
+        print(f"Envoi message a {chat_id}: {response.status_code}")
     except Exception as e:
-        print(f"❌ Erreur envoi: {e}")
+        print(f"Erreur envoi: {e}")
 
 
 def get_updates():
@@ -41,7 +51,7 @@ def get_updates():
         try:
             updates = response.json()
         except Exception:
-            print(f"❌ Réponse non-JSON de Telegram: {response.text[:300]}")
+            print(f"Reponse non-JSON de Telegram: {response.text[:300]}")
             return
 
         if updates.get("ok") and updates.get("result"):
@@ -52,7 +62,7 @@ def get_updates():
                 elif "callback_query" in update:
                     process_callback(update["callback_query"])
     except Exception as e:
-        print(f"❌ Erreur get_updates: {e}")
+        print(f"Erreur get_updates: {e}")
 
 
 def start_flow(chat_id, mode):
@@ -102,7 +112,7 @@ def process_message(message):
     chat_id = message["chat"]["id"]
     text = message.get("text", "")
 
-    print(f"📩 Message reçu de {chat_id}: '{text}'")
+    print(f"Message recu de {chat_id}: '{text}'")
 
     if text == "/start":
         keyboard = {
@@ -129,7 +139,7 @@ def process_message(message):
         try:
             sl_dollars = float(text.replace(",", "."))
             if sl_dollars <= 0:
-                raise ValueError("SL doit être positif")
+                raise ValueError("SL doit etre positif")
         except Exception:
             send_message(chat_id, "❌ *Stop Loss invalide.* Exemple: 7")
             return
@@ -160,7 +170,7 @@ def process_callback(callback):
     chat_id = callback["message"]["chat"]["id"]
     data = callback["data"]
 
-    print(f"📩 Callback reçu de {chat_id}: {data}")
+    print(f"Callback recu de {chat_id}: {data}")
 
     if data in ["buy", "sell"]:
         start_flow(chat_id, data)
@@ -169,7 +179,7 @@ def process_callback(callback):
     try:
         requests.post(answer_url, data={"callback_query_id": callback["id"]}, timeout=10)
     except Exception as e:
-        print(f"❌ Erreur callback: {e}")
+        print(f"Erreur callback: {e}")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -189,13 +199,13 @@ def run_http():
 
 Thread(target=run_http, daemon=True).start()
 
-print("🤖 XAUUSD Bot - Étape 1 : nouveau format de message")
-print("✅ Bot démarré. En attente des messages...")
+print("XAUUSD Bot - Demarrage en cours")
+print("Bot demarre. En attente des messages...")
 
 while True:
     try:
         get_updates()
         time.sleep(1)
     except Exception as e:
-        print(f"❌ Erreur boucle principale: {e}")
+        print(f"Erreur boucle principale: {e}")
         time.sleep(5)
