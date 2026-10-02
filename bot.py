@@ -2,14 +2,23 @@ import requests
 import json
 import time
 import datetime
+import os
+from zoneinfo import ZoneInfo
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-TOKEN = "8520274534:AAFzNcKxGeUeUAFYbhAwmiham59BuChGydY"
-CHANNEL_ID = "-1003340688495"
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "-1003340688495")
+
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN manquant dans les variables d'environnement.")
+
+PARIS_TZ = ZoneInfo("Europe/Paris")
 
 last_update_id = 0
-user_mode = {}
+
+user_state = {}
+
 
 def send_message(chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -17,24 +26,24 @@ def send_message(chat_id, text, reply_markup=None):
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
     try:
-        response = requests.post(url, data=data)
+        response = requests.post(url, data=data, timeout=10)
         print(f"📤 Envoi message à {chat_id}: {response.status_code}")
     except Exception as e:
         print(f"❌ Erreur envoi: {e}")
+
 
 def get_updates():
     global last_update_id
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
     params = {"offset": last_update_id + 1, "timeout": 30}
     try:
-        print("📥 Checking updates...")
-        response = requests.get(url, params=params)
-        print(f"📥 Réponse API: {response.status_code}")
-        updates = response.json()
-        
-        # Affiche les 500 premiers caractères pour debug
-        print(f"📥 Données reçues: {str(updates)[:500]}")
-        
+        response = requests.get(url, params=params, timeout=35)
+        try:
+            updates = response.json()
+        except Exception:
+            print(f"❌ Réponse non-JSON de Telegram: {response.text[:300]}")
+            return
+
         if updates.get("ok") and updates.get("result"):
             for update in updates["result"]:
                 last_update_id = update["update_id"]
@@ -45,105 +54,124 @@ def get_updates():
     except Exception as e:
         print(f"❌ Erreur get_updates: {e}")
 
+
+def start_flow(chat_id, mode):
+    user_state[chat_id] = {"mode": mode, "step": "sl"}
+    send_message(chat_id, "💰 *Entrez le Stop Loss en $* (ex: 7):")
+
+
+def build_signal_message(mode, sl_dollars, entry):
+    now_paris = datetime.datetime.now(PARIS_TZ)
+    date_str = now_paris.strftime("%d/%m/%Y")
+    time_str = now_paris.strftime("%H:%M")
+
+    entry_low = entry - 1
+    entry_high = entry + 1
+
+    if mode == "buy":
+        sl_price = entry - sl_dollars
+        tp1 = entry + sl_dollars * 1
+        tp2 = entry + sl_dollars * 2
+        tp3 = entry + sl_dollars * 3
+        emoji = "🟢"
+        label = "BUY SIGNAL"
+    else:
+        sl_price = entry + sl_dollars
+        tp1 = entry - sl_dollars * 1
+        tp2 = entry - sl_dollars * 2
+        tp3 = entry - sl_dollars * 3
+        emoji = "🔴"
+        label = "SELL SIGNAL"
+
+    message = (
+        f"{emoji} *{label}* - XAUUSD\n\n"
+        f"📅 *Date:* {date_str}\n"
+        f"⏰ *Time:* {time_str}\n\n"
+        f"📊 *Entry Zone:* {entry_low:.2f} - {entry_high:.2f}\n\n"
+        f"🎯 *TP1 (RR 1):* {tp1:.2f}\n"
+        f"🎯 *TP2 (RR 2):* {tp2:.2f}\n"
+        f"🎯 *TP3 (RR 3):* {tp3:.2f}\n"
+        f"🔄 *TP4 SWING*\n\n"
+        f"🛑 *SL:* {sl_price:.2f} (-1R)\n\n"
+        f"This trade is sent by ORYECHNIK STRATEGY 🚀"
+    )
+    return message
+
+
 def process_message(message):
-    global user_mode
     chat_id = message["chat"]["id"]
     text = message.get("text", "")
-    
+
     print(f"📩 Message reçu de {chat_id}: '{text}'")
-    
-    # Test simple : répondre à tout message pour vérifier que le bot fonctionne
-    # send_message(chat_id, f"✅ Message reçu: {text}")
-    # return
 
     if text == "/start":
         keyboard = {
             "inline_keyboard": [
                 [{"text": "🟢 BUY", "callback_data": "buy"}],
-                [{"text": "🔴 SELL", "callback_data": "sell"}]
+                [{"text": "🔴 SELL", "callback_data": "sell"}],
             ]
         }
         send_message(chat_id, "🤖 *XAUUSD Trading Bot*\nChoose an action:", keyboard)
-        user_mode.pop(chat_id, None)
+        user_state.pop(chat_id, None)
         return
 
     if text in ["/buy", "/sell"]:
         mode = "buy" if text == "/buy" else "sell"
-        user_mode[chat_id] = mode
-        send_message(chat_id, f"💰 *Enter {mode.upper()} price* (ex: 4200.00):")
+        start_flow(chat_id, mode)
         return
 
-    if chat_id not in user_mode:
+    state = user_state.get(chat_id)
+    if not state:
         send_message(chat_id, "❌ Use /buy or /sell first.")
         return
 
-    try:
-        prix = float(text.replace(",", "."))
-        mode = user_mode.pop(chat_id)
+    if state["step"] == "sl":
+        try:
+            sl_dollars = float(text.replace(",", "."))
+            if sl_dollars <= 0:
+                raise ValueError("SL doit être positif")
+        except Exception:
+            send_message(chat_id, "❌ *Stop Loss invalide.* Exemple: 7")
+            return
 
-        now = datetime.datetime.now()
-        date_str = now.strftime("%d/%m/%Y")
-        time_str = now.strftime("%H:%M")
+        state["sl"] = sl_dollars
+        state["step"] = "price"
+        send_message(chat_id, "📊 *Entrez le prix d'entrée:*")
+        return
 
-        entry_low = prix - 2
-        entry_high = prix + 3
+    if state["step"] == "price":
+        try:
+            entry = float(text.replace(",", "."))
+        except Exception:
+            send_message(chat_id, "❌ *Prix d'entrée invalide.*")
+            return
 
-        if mode == "buy":
-            message_signal = (
-                f"🟢 *BUY SIGNAL* - XAUUSD\n\n"
-                f"📅 *Date:* {date_str}\n"
-                f"⏰ *Time:* {time_str}\n\n"
-                f"📊 *Entry Zone:* {entry_low:.2f} - {entry_high:.2f}\n"
-                f"📈 *Time Frame:* 10min\n\n"
-                f"🎯 *TP1:* {prix+20:.2f}\n"
-                f"🎯 *TP2:* {prix+30:.2f}\n"
-                f"🎯 *TP3:* {prix+40:.2f}\n"
-                f"🔄 *Swing:* Small lot after TP3\n\n"
-                f"🛑 *SL:* {prix-20:.2f}\n\n"
-                f"#XAUUSD #Trading"
-            )
-        else:
-            message_signal = (
-                f"🔴 *SELL SIGNAL* - XAUUSD\n\n"
-                f"📅 *Date:* {date_str}\n"
-                f"⏰ *Time:* {time_str}\n\n"
-                f"📊 *Entry Zone:* {entry_low:.2f} - {entry_high:.2f}\n"
-                f"📈 *Time Frame:* 10min\n\n"
-                f"🎯 *TP1:* {prix-20:.2f}\n"
-                f"🎯 *TP2:* {prix-30:.2f}\n"
-                f"🎯 *TP3:* {prix-40:.2f}\n"
-                f"🔄 *Swing:* Small lot after TP3\n\n"
-                f"🛑 *SL:* {prix+20:.2f}\n\n"
-                f"#XAUUSD #Trading"
-            )
+        mode = state["mode"]
+        sl_dollars = state["sl"]
+        user_state.pop(chat_id, None)
 
-        send_message(CHANNEL_ID, message_signal)
+        signal_text = build_signal_message(mode, sl_dollars, entry)
+        send_message(CHANNEL_ID, signal_text)
         send_message(chat_id, f"✅ *Signal {mode.upper()}* sent to channel!")
+        return
 
-    except Exception as e:
-        print(f"❌ Erreur traitement prix: {e}")
-        send_message(chat_id, "❌ *Invalid price.*")
 
 def process_callback(callback):
     chat_id = callback["message"]["chat"]["id"]
     data = callback["data"]
-    
+
     print(f"📩 Callback reçu de {chat_id}: {data}")
 
-    if data == "buy":
-        user_mode[chat_id] = "buy"
-        send_message(chat_id, "💰 Enter BUY price:")
-    elif data == "sell":
-        user_mode[chat_id] = "sell"
-        send_message(chat_id, "💰 Enter SELL price:")
+    if data in ["buy", "sell"]:
+        start_flow(chat_id, data)
 
     answer_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
     try:
-        requests.post(answer_url, data={"callback_query_id": callback["id"]})
+        requests.post(answer_url, data={"callback_query_id": callback["id"]}, timeout=10)
     except Exception as e:
         print(f"❌ Erreur callback: {e}")
 
-# === FAUX SERVEUR HTTP POUR RENDER (avec HEAD supporté) ===
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -153,14 +181,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
-# ==========================================================
+
 
 def run_http():
     HTTPServer(("0.0.0.0", 10000), Handler).serve_forever()
 
+
 Thread(target=run_http, daemon=True).start()
 
-print("🤖 XAUUSD Bot - TP/SL 20/20/30/40 + Swing + Entry Zone + 10min + HEAD support")
+print("🤖 XAUUSD Bot - Étape 1 : nouveau format de message")
 print("✅ Bot démarré. En attente des messages...")
 
 while True:
